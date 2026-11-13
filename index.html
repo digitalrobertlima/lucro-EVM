@@ -349,6 +349,16 @@
         .tag-defi { background: rgba(0, 212, 255, 0.12); color: var(--cyan-accent); }
         .tag-ignored { background: rgba(255, 255, 255, 0.08); color: #777; text-decoration: line-through; }
 
+        .cp-pill {
+            display: inline-block;
+            font-size: 0.56rem;
+            padding: 1px 4px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.06);
+            color: #999;
+            margin-left: 4px;
+        }
+
         .btn-mini {
             padding: 3px 6px;
             font-size: 0.6rem;
@@ -394,15 +404,15 @@
 
     <div class="kpi-grid">
         <div class="kpi-card">
-            <span class="kpi-label">Total Aportado (Entradas Reais)</span>
+            <span class="kpi-label">Total Aportado (Entradas EOA Reais)</span>
             <span class="kpi-val mono pos" id="kpi-in-main">R$ 0,00</span>
             <span class="kpi-sub mono" id="kpi-in-sub">$ 0.00 • 1ª tx: --</span>
         </div>
 
         <div class="kpi-card">
-            <span class="kpi-label">Total Sacado (Saídas Reais)</span>
+            <span class="kpi-label">Total Sacado (Saídas EOA Reais)</span>
             <span class="kpi-val mono neg" id="kpi-out-main">R$ 0,00</span>
-            <span class="kpi-sub mono" id="kpi-out-sub">$ 0.00 • Gás pago: R$ 0,00</span>
+            <span class="kpi-sub mono" id="kpi-out-sub">$ 0.00 • Gás total: R$ 0,00</span>
         </div>
 
         <div class="kpi-card">
@@ -428,7 +438,7 @@
                 <canvas id="cashflowChart"></canvas>
             </div>
             <div class="legend-note">
-                <b>Leitura Visual:</b> Barras <span class="pos">verdes</span> = aportes externos; barras <span class="neg">vermelhas</span> = saques reais. A linha <span style="color:var(--dekton-copper)">dourada</span> mostra seu <b>Capital Líquido Investido</b> (Entradas − Saques) e a linha <span class="neu">ciano</span> mostra seu <b>Patrimônio Real Atual</b> (saldos livres + liquidez e tarifas nas pools Uniswap V3). Quando a linha ciano termina acima da dourada, você está no lucro líquido real.
+                <b>Contabilidade EOA vs. Contrato:</b> Aberturas/fechamentos de pools na Uniswap V3 e swaps são movimentações internas entre smart contracts (<b>DEFI / V3</b>) e não contam como saque ou aporte. Apenas transferências com carteiras externas (<b>EOA</b>) movem a linha <span style="color:var(--dekton-copper)">dourada</span> (Capital Líquido Investido). Quando a linha <span class="neu">ciano</span> (Patrimônio Real Atual) está acima da dourada, há lucro líquido real.
             </div>
         </div>
 
@@ -453,7 +463,7 @@
                         <tr>
                             <th>Data</th>
                             <th>Tipo</th>
-                            <th>Ativo / Movimento</th>
+                            <th>Ativo / Contraparte</th>
                             <th>Valor na Data</th>
                             <th>Ação</th>
                         </tr>
@@ -484,23 +494,16 @@ const BLOCKSCOUT_API = 'https://polygon.blockscout.com/api/v2';
 const NFPM_ADDRESS = '0xc36442b4a4522e871399cd717abdd847ab11fe88';
 const WPOL_ADDRESS = '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270';
 
-// Contratos DeFi conhecidos (interações com estes contratos são operações internas, não saque/aporte)
-const DEFI_CONTRACTS = new Set([
-    NFPM_ADDRESS,
-    '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45', // Uniswap SwapRouter02
-    '0xe592427a0aece92de3edee1f18e0157c05861564', // Uniswap SwapRouter v1
-    '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad', // Uniswap Universal Router
-    WPOL_ADDRESS,                                 // WPOL Wrap/Unwrap
-    '0x9b08288c3be4f62bbf8d1c20ac9c5e6f9467d8b7', // Pool POL/USDT0 0.05%
-    '0x1111111254eeb25477b68fb85ed929f73a960582', // 1inch v5
-    '0x111111125421ca6dc452d289314280a0f8842a65', // 1inch v6
-    '0xcf5540fffcdc3d510b18bfca6d2b9987b0772559', // Odos Router
-    '0xdef171fe48cf0115b1d80b88dc8eab59176fee57', // ParaSwap
-    '0xa5e0829caced8ffdd4de3c43696c57f7d7a678ff', // QuickSwap Router
-    '0x794a61358d6845594f94dc1db02a252b5b4814ad'  // Aave V3 Pool
+// Pontes oficiais cross-chain (se entrar dinheiro por uma ponte, conta como aporte externo IN)
+const KNOWN_BRIDGE_CONTRACTS = new Set([
+    '0xa0c68c638235ee32657e8f720a23cec1bfc77c77', // Polygon PoS Bridge
+    '0x40ec5b33f54e0e8a33a975908c5ba1c14e5bbbdf', // Polygon ERC20 Bridge
+    '0x9295ee1d8c5b022be115a2ad3c30c72e34e7f096', // Across SpokePool Polygon
+    '0x45a01e4e04f14f7a4a6702c74187c5f6222033cd', // Stargate Router Polygon
+    '0xce16f69375520ab01377ce7b88f5ba8c48f8d666'  // Squid Router
 ]);
 
-// Allowlist de ativos reais na Polygon (impede que tokens spam/airdrop falsos distorçam o P&L)
+// Allowlist de ativos reais na Polygon (filtra tokens spam/phishing)
 const VERIFIED_TOKENS = {
     'native':                                     { symbol: 'POL',    decimals: 18, kind: 'VOLATILE', llamaId: `polygon:${WPOL_ADDRESS}` },
     [WPOL_ADDRESS]:                               { symbol: 'WPOL',   decimals: 18, kind: 'VOLATILE', llamaId: `polygon:${WPOL_ADDRESS}` },
@@ -527,6 +530,7 @@ let state = {
     },
     historicalFxMap: {},        // 'YYYY-MM-DD' -> usdBrlRate
     dailyTokenPricesMap: {},    // 'tokenAddrLower' -> { 'YYYY-MM-DD': usdPrice }
+    addressIsContractCache: {}, // '0x...' -> true | false
     ledgerEvents: [],
     manualOverrides: {},
     currentHoldings: {
@@ -632,7 +636,6 @@ async function refreshLivePrices() {
         }
     } catch (e) {}
 
-    // Preços atuais em lote via DefiLlama
     const llamaIds = Object.values(VERIFIED_TOKENS)
         .map(t => t.llamaId)
         .filter(Boolean);
@@ -659,7 +662,6 @@ async function refreshLivePrices() {
 }
 
 async function fetchHistoricalFxBatch(startUnixSec) {
-    // 1. Consulta Banco Central do Brasil (PTAX oficial) desde a 1ª transação até hoje em 1 chamada
     try {
         const startDate = new Date(startUnixSec * 1000 - 7 * 86400000);
         const endDate = new Date();
@@ -682,7 +684,6 @@ async function fetchHistoricalFxBatch(startUnixSec) {
         }
     } catch (e) {}
 
-    // 2. Complementa com AwesomeAPI (365 dias) caso haja lacuna recente
     try {
         const res = await fetch('https://economia.awesomeapi.com.br/json/daily/USD-BRL/365');
         const list = await res.json();
@@ -768,6 +769,35 @@ function getTokenUsdPriceOnDate(tokenAddr, dateKey) {
 }
 
 // ============================================================================
+// DETECÇÃO DE SMART CONTRACT VS. CARTEIRA EXTERNA (EOA)
+// ============================================================================
+function recordAddressTypeHint(addrObj) {
+    if (!addrObj || !addrObj.hash) return;
+    const addr = addrObj.hash.toLowerCase();
+    if (typeof addrObj.is_contract === 'boolean') {
+        state.addressIsContractCache[addr] = addrObj.is_contract;
+    }
+}
+
+async function resolveUnknownAddressesViaRpc(addressesToCheck) {
+    const unknown = Array.from(addressesToCheck).filter(
+        a => a && a.startsWith('0x') && state.addressIsContractCache[a] === undefined
+    );
+    if (unknown.length === 0) return;
+
+    for (const rpc of POLYGON_RPCS) {
+        try {
+            const provider = new ethers.providers.JsonRpcProvider(rpc);
+            await Promise.all(unknown.map(async (addr) => {
+                const code = await provider.getCode(addr);
+                state.addressIsContractCache[addr] = Boolean(code && code !== '0x');
+            }));
+            return;
+        } catch (e) {}
+    }
+}
+
+// ============================================================================
 // VARREDURA COMPLETA BLOCKSCOUT V2 (TXS + INTERNAL TXS + ERC-20 TRANSFERS)
 // ============================================================================
 async function fetchBlockscoutAllPages(path, label, basePct, spanPct) {
@@ -810,10 +840,11 @@ async function buildChronologicalLedger(wallet) {
         fetchBlockscoutAllPages(`/addresses/${wallet}/token-transfers?type=ERC-20`, 'Transferências ERC-20', 45, 22)
     ]);
 
-    setProgress(true, 'Consolidando eventos pelo hash da transação e filtrando spam...', 70);
+    setProgress(true, 'Identificando Smart Contracts (DeFi/Pools) vs. Carteiras Externas (EOA)...', 68);
 
     const txMap = new Map();
     const tokensUsedSet = new Set(['native', WPOL_ADDRESS]);
+    const counterpartiesSet = new Set();
 
     function getOrCreateTx(hashRaw, timestampIso) {
         const hash = String(hashRaw || '').toLowerCase();
@@ -829,24 +860,35 @@ async function buildChronologicalLedger(wallet) {
                 inflows: [],
                 outflows: [],
                 gasPol: 0,
-                interactedContracts: new Set(),
+                topLevelTo: '',
+                topLevelToIsContract: false,
                 isFailed: false
             });
         }
         return txMap.get(hash);
     }
 
-    // 1. Transações principais (POL nativo direto + Gás de todas as txs, inclusive falhas)
+    // 1. Transações principais (POL nativo + destino da chamada + gás)
     normalTxs.forEach(tx => {
+        recordAddressTypeHint(tx.from);
+        recordAddressTypeHint(tx.to);
+
         const hash = tx.hash || tx.transaction_hash;
         const entry = getOrCreateTx(hash, tx.timestamp);
         if (!entry) return;
 
         const fromAddr = (tx.from?.hash || '').toLowerCase();
         const toAddr = (tx.to?.hash || '').toLowerCase();
-        if (toAddr) entry.interactedContracts.add(toAddr);
 
-        // Sempre contabiliza gás pago se a carteira assinou a transação
+        if (toAddr) {
+            entry.topLevelTo = toAddr;
+            counterpartiesSet.add(toAddr);
+            if (tx.to?.is_contract === true) {
+                entry.topLevelToIsContract = true;
+            }
+        }
+        if (fromAddr && fromAddr !== wallet) counterpartiesSet.add(fromAddr);
+
         if (fromAddr === wallet && tx.fee?.value) {
             try {
                 entry.gasPol += parseFloat(ethers.utils.formatEther(tx.fee.value));
@@ -872,17 +914,20 @@ async function buildChronologicalLedger(wallet) {
         }
     });
 
-    // 2. Transações internas (ex.: POL recebido ao fazer unwrap de WPOL ou devolução de roteador)
+    // 2. Transações internas (Unwrap WPOL -> POL, devoluções de roteador)
     internalTxs.forEach(itx => {
+        recordAddressTypeHint(itx.from);
+        recordAddressTypeHint(itx.to);
         if (itx.success === false || itx.error) return;
+
         const hash = itx.transaction_hash || itx.tx_hash || itx.hash;
         const entry = getOrCreateTx(hash, itx.timestamp);
         if (!entry) return;
 
         const fromAddr = (itx.from?.hash || '').toLowerCase();
         const toAddr = (itx.to?.hash || '').toLowerCase();
-        if (fromAddr) entry.interactedContracts.add(fromAddr);
-        if (toAddr) entry.interactedContracts.add(toAddr);
+        if (fromAddr && fromAddr !== wallet) counterpartiesSet.add(fromAddr);
+        if (toAddr && toAddr !== wallet) counterpartiesSet.add(toAddr);
 
         if (itx.value && itx.value !== '0') {
             try {
@@ -898,9 +943,12 @@ async function buildChronologicalLedger(wallet) {
         }
     });
 
-    // 3. Transferências ERC-20 (suporta schema Blockscout v2: transaction_hash + address_hash)
+    // 3. Transferências ERC-20
     tokenTransfers.forEach(tr => {
+        recordAddressTypeHint(tr.from);
+        recordAddressTypeHint(tr.to);
         if (tr.token?.is_spam === true) return;
+
         const hash = tr.transaction_hash || tr.tx_hash;
         const entry = getOrCreateTx(hash, tr.timestamp);
         if (!entry) return;
@@ -909,7 +957,6 @@ async function buildChronologicalLedger(wallet) {
         const toAddr = (tr.to?.hash || '').toLowerCase();
         const tokenAddr = (tr.token?.address_hash || tr.token?.address || '').toLowerCase();
 
-        // Ignora tokens não verificados (spam/phishing) para não gerar P&L falso
         const verifiedMeta = VERIFIED_TOKENS[tokenAddr];
         if (!verifiedMeta) return;
 
@@ -924,6 +971,8 @@ async function buildChronologicalLedger(wallet) {
         if (amount <= 0) return;
 
         tokensUsedSet.add(tokenAddr);
+        if (fromAddr && fromAddr !== wallet) counterpartiesSet.add(fromAddr);
+        if (toAddr && toAddr !== wallet) counterpartiesSet.add(toAddr);
 
         if (toAddr === wallet && fromAddr !== wallet) {
             entry.inflows.push({ addr: tokenAddr, symbol: verifiedMeta.symbol, amount, counterparty: fromAddr });
@@ -931,6 +980,9 @@ async function buildChronologicalLedger(wallet) {
             entry.outflows.push({ addr: tokenAddr, symbol: verifiedMeta.symbol, amount, counterparty: toAddr });
         }
     });
+
+    // Verifica via eth_getCode qualquer endereço cuja natureza (EOA vs Contrato) não veio preenchida
+    await resolveUnknownAddressesViaRpc(counterpartiesSet);
 
     const sortedTxs = Array.from(txMap.values()).sort((a, b) => a.unixSec - b.unixSec);
     if (sortedTxs.length === 0) {
@@ -974,16 +1026,31 @@ async function buildChronologicalLedger(wallet) {
             outTexts.push(`-${item.amount.toFixed(item.amount < 1 ? 4 : 2)} ${item.symbol}`);
         });
 
-        // Se tocou em contrato DeFi (NFPM, SwapRouter, Pool, WPOL, etc.) OU houve troca bilateral -> DEFI
-        const touchedDefi = Array.from(tx.interactedContracts).some(c => DEFI_CONTRACTS.has(c)) ||
-            tx.inflows.some(x => DEFI_CONTRACTS.has(x.counterparty)) ||
-            tx.outflows.some(x => DEFI_CONTRACTS.has(x.counterparty));
+        // Verifica se a transação ou contraparte envolveu Smart Contract (DeFi/Pool/Router)
+        const calledContract = tx.topLevelToIsContract ||
+            (tx.topLevelTo && state.addressIsContractCache[tx.topLevelTo] === true);
+
+        const anyInFromContract = tx.inflows.some(
+            x => state.addressIsContractCache[x.counterparty] === true && !KNOWN_BRIDGE_CONTRACTS.has(x.counterparty)
+        );
+        const anyOutToContract = tx.outflows.some(
+            x => state.addressIsContractCache[x.counterparty] === true
+        );
+        const cameFromBridge = tx.inflows.some(x => KNOWN_BRIDGE_CONTRACTS.has(x.counterparty));
+
+        const isDeFiOperation = calledContract || anyInFromContract || anyOutToContract;
 
         let autoClass = 'DEFI';
-        if (!tx.isFailed && !touchedDefi && inUsd > 0.05 && outUsd === 0) {
-            autoClass = 'IN';
-        } else if (!tx.isFailed && !touchedDefi && outUsd > 0.05 && inUsd === 0) {
-            autoClass = 'OUT';
+        if (!tx.isFailed) {
+            if (cameFromBridge && inUsd > 0.05 && outUsd === 0) {
+                autoClass = 'IN';
+            } else if (!isDeFiOperation && inUsd > 0.05 && outUsd === 0) {
+                // Veio de uma carteira externa EOA (corretora / ramp PIX / outra carteira)
+                autoClass = 'IN';
+            } else if (!isDeFiOperation && outUsd > 0.05 && inUsd === 0) {
+                // Saiu diretamente para uma carteira externa EOA (saque corretora / ramp PIX)
+                autoClass = 'OUT';
+            }
         }
 
         const desc = tx.isFailed
@@ -996,6 +1063,7 @@ async function buildChronologicalLedger(wallet) {
             dateKey: tx.dateKey,
             fxRate,
             autoClass,
+            counterpartyKind: isDeFiOperation ? 'CONTRATO' : 'EOA',
             inUsd,
             inBrl,
             outUsd,
@@ -1018,14 +1086,17 @@ async function refreshLiveEquity(wallet) {
         'function positions(uint256) view returns (uint96,address,address token0,address token1,uint24 fee,int24 tickLower,int24 tickUpper,uint128 liquidity,uint256,uint256,uint128 tokensOwed0,uint128 tokensOwed1)'
     ];
     const factoryAbi = ['function getPool(address,address,uint24) view returns (address)'];
-    const poolAbi = ['function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16, uint16, uint16, uint8, bool)'];
+    const poolAbi = [
+        'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16, uint16, uint16, uint8, bool)',
+        'function feeGrowthGlobal0X128() view returns (uint256)',
+        'function feeGrowthGlobal1X128() view returns (uint256)'
+    ];
     const UNISWAP_V3_FACTORY = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
 
     for (const rpc of POLYGON_RPCS) {
         try {
             const provider = new ethers.providers.JsonRpcProvider(rpc);
 
-            // 1. Lê saldos livres de todos os ativos verificados
             const tokenEntries = Object.entries(VERIFIED_TOKENS).filter(([k]) => k !== 'native');
             const [nativeBalBN, ...erc20BalsBN] = await Promise.all([
                 provider.getBalance(wallet),
@@ -1044,7 +1115,6 @@ async function refreshLiveEquity(wallet) {
                 }
             });
 
-            // 2. Lê dinamicamente TODAS as posições NFT ativas na Uniswap V3
             let lpUsd = 0;
             let activePoolsCount = 0;
             try {
@@ -1150,7 +1220,7 @@ function recalculateAndRenderAll() {
     const curEquityUsd = state.currentHoldings.freeUsd + state.currentHoldings.lpUsd;
     const curEquityBrl = state.currentHoldings.freeBrl + state.currentHoldings.lpBrl;
 
-    // Equação Contábil Fundamental: Lucro Real = (Patrimônio Atual + Total Sacado) - Total Aportado
+    // Equação Contábil Fundamental: Lucro Real = (Patrimônio Atual + Total Sacado EOA) - Total Aportado EOA
     const pnlUsd = (curEquityUsd + totalOutUsd) - totalInUsd;
     const pnlBrl = (curEquityBrl + totalOutBrl) - totalInBrl;
 
@@ -1239,7 +1309,12 @@ function renderLedgerTable() {
         const tdDesc = document.createElement('td');
         tdDesc.className = 'mono';
         tdDesc.style.fontSize = '0.65rem';
-        tdDesc.textContent = ev.summaryText;
+        tdDesc.appendChild(document.createTextNode(ev.summaryText));
+
+        const cpBadge = document.createElement('span');
+        cpBadge.className = 'cp-pill';
+        cpBadge.textContent = ev.counterpartyKind;
+        tdDesc.appendChild(cpBadge);
 
         const tdVal = document.createElement('td');
         tdVal.className = 'mono';
@@ -1256,7 +1331,7 @@ function renderLedgerTable() {
             const order = ['IN', 'OUT', 'DEFI', 'IGNORE'];
             const next = order[(order.indexOf(ev.effectiveClass) + 1) % order.length];
             state.manualOverrides[ev.hash] = next;
-            localStorage.setItem(`rdesk_audit_ov_${state.wallet}`, JSON.stringify(state.manualOverrides));
+            localStorage.setItem(`rdesk_audit_v2_ov_${state.wallet}`, JSON.stringify(state.manualOverrides));
             recalculateAndRenderAll();
         });
         tdAct.appendChild(btnCycle);
@@ -1398,7 +1473,7 @@ async function startFullWalletAudit(rawAddress) {
     showErrorBanner('');
     state.wallet = addr;
     try {
-        const savedOv = localStorage.getItem(`rdesk_audit_ov_${addr}`);
+        const savedOv = localStorage.getItem(`rdesk_audit_v2_ov_${addr}`);
         state.manualOverrides = savedOv ? JSON.parse(savedOv) : {};
     } catch (e) {
         state.manualOverrides = {};
@@ -1461,11 +1536,11 @@ document.querySelectorAll('.chip[data-filter]').forEach(btn => {
 
 document.getElementById('btn-export-csv').addEventListener('click', () => {
     if (state.ledgerEvents.length === 0) return;
-    const header = 'Data;Hash;Tipo;Movimento;Valor_BRL;Valor_USD;Gas_BRL;Taxa_USD_BRL\n';
+    const header = 'Data;Hash;Tipo;Contraparte;Movimento;Valor_BRL;Valor_USD;Gas_BRL;Taxa_USD_BRL\n';
     const rows = state.ledgerEvents.map(ev => {
         const refBrl = ev.effectiveClass === 'OUT' ? ev.outBrl : (ev.inBrl || ev.outBrl);
         const refUsd = ev.effectiveClass === 'OUT' ? ev.outUsd : (ev.inUsd || ev.outUsd);
-        return `${ev.dateKey};${ev.hash};${ev.effectiveClass};"${ev.summaryText}";${refBrl.toFixed(2)};${refUsd.toFixed(2)};${ev.gasBrl.toFixed(4)};${ev.fxRate.toFixed(4)}`;
+        return `${ev.dateKey};${ev.hash};${ev.effectiveClass};${ev.counterpartyKind};"${ev.summaryText}";${refBrl.toFixed(2)};${refUsd.toFixed(2)};${ev.gasBrl.toFixed(4)};${ev.fxRate.toFixed(4)}`;
     }).join('\n');
 
     const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
